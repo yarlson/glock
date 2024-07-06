@@ -1,6 +1,7 @@
 # glock
 
 [![codecov](https://codecov.io/github/yarlson/glock/graph/badge.svg?token=PqqkygGeks)](https://codecov.io/github/yarlson/glock)
+[![Go Reference](https://pkg.go.dev/badge/github.com/yarlson/glock.svg)](https://pkg.go.dev/github.com/yarlson/glock)
 
 glock is a Go package that provides a distributed locking mechanism using PostgreSQL. It's designed for coordinating access to shared resources across multiple processes or servers.
 
