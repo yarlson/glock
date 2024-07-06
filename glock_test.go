@@ -226,3 +226,111 @@ func (s *GlobalLockTestSuite) TestHeartbeat() {
 	s.Require().NoError(err)
 	s.Equal(0, count, "Lock should be released after Run completes")
 }
+
+func (s *GlobalLockTestSuite) TestRunFailToAcquireAdvisoryLock() {
+	gl := NewGlobalLock(s.db, 1, "instance1")
+
+	// Acquire the advisory lock outside of Run to force a failure
+	tx, err := s.db.Begin()
+	s.Require().NoError(err)
+	defer tx.Rollback()
+
+	_, err = tx.Exec("SELECT pg_advisory_lock($1)", gl.lockID)
+	s.Require().NoError(err)
+
+	err = gl.Run(func(tx *sql.Tx) error {
+		return nil
+	})
+
+	s.Require().NoError(err) // Run should return nil when it can't acquire the lock
+}
+
+func (s *GlobalLockTestSuite) TestRunFailToCheckLastHeartbeat() {
+	gl := NewGlobalLock(s.db, 1, "instance1")
+
+	// Drop the locks table to force an error when checking the last heartbeat
+	_, err := s.db.Exec("DROP TABLE IF EXISTS locks")
+	s.Require().NoError(err)
+
+	err = gl.Run(func(tx *sql.Tx) error {
+		return nil
+	})
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "failed to check last heartbeat")
+
+	// Recreate the locks table for other tests
+	s.SetupTest()
+}
+
+func (s *GlobalLockTestSuite) TestRunFailToAcquireLock() {
+	gl := NewGlobalLock(s.db, 1, "instance1")
+
+	// Modify the locks table to have a NOT NULL constraint on a column
+	// This will cause the INSERT to fail
+	_, err := s.db.Exec("ALTER TABLE locks ADD COLUMN test_column TEXT NOT NULL")
+	s.Require().NoError(err)
+
+	err = gl.Run(func(tx *sql.Tx) error {
+		return nil
+	})
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "failed to acquire lock")
+
+	// Remove the added column for other tests
+	_, err = s.db.Exec("ALTER TABLE locks DROP COLUMN test_column")
+	s.Require().NoError(err)
+}
+
+func (s *GlobalLockTestSuite) TestRunFailToReleaseLock() {
+	gl := NewGlobalLock(s.db, 1, "instance1")
+
+	err := gl.Run(func(tx *sql.Tx) error {
+		// Drop the locks table to force an error when releasing the lock
+		_, err := tx.Exec("DROP TABLE IF EXISTS locks")
+		s.Require().NoError(err)
+		return nil
+	})
+
+	s.Require().Error(err)
+
+	// Recreate the locks table for other tests
+	s.SetupTest()
+}
+
+func (s *GlobalLockTestSuite) TestRunFailToCommitTransaction() {
+	gl := NewGlobalLock(s.db, 1, "instance1")
+
+	err := gl.Run(func(tx *sql.Tx) error {
+		// Perform an operation that will cause the transaction to fail on commit
+		_, err := tx.Exec("INSERT INTO non_existent_table VALUES (1)")
+		s.Require().Error(err)
+		return nil
+	})
+
+	s.Require().Error(err)
+}
+
+func (s *GlobalLockTestSuite) TestHeartbeatFailure() {
+	gl := NewGlobalLock(s.db, 1, "instance1", WithHeartbeatInterval(100*time.Millisecond))
+
+	err := gl.Run(func(tx *sql.Tx) error {
+		// Wait for at least one heartbeat attempt
+		time.Sleep(200 * time.Millisecond)
+
+		// Drop the locks table to force a heartbeat error
+		_, err := tx.Exec("DROP TABLE IF EXISTS locks")
+		s.Require().NoError(err)
+
+		// Wait for another heartbeat attempt
+		time.Sleep(200 * time.Millisecond)
+
+		return nil
+	})
+
+	s.Require().Error(err)
+
+	// Recreate the locks table for other tests
+	s.SetupTest()
+}
