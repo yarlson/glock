@@ -252,13 +252,65 @@ func (gl *GlobalLock) Run(f func(*sql.Tx) error) error {
 //	    log.Fatalf("Failed to create locks table: %v", err)
 //	}
 func (gl *GlobalLock) EnsureTable() error {
-	_, err := gl.db.Exec(`
-        CREATE TABLE IF NOT EXISTS locks (
-            id BIGINT PRIMARY KEY,
-            locked_by VARCHAR(255),
-            locked_at TIMESTAMP,
-            last_heartbeat TIMESTAMP
+	// Start a transaction
+	tx, err := gl.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Check if the table exists
+	var exists bool
+	err = tx.QueryRow(`
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'locks'
         )
-    `)
-	return err
+    `).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check if table exists: %v", err)
+	}
+
+	if !exists {
+		// Table doesn't exist, so create it
+		_, err = tx.Exec(`
+            CREATE TABLE locks (
+                id BIGINT PRIMARY KEY,
+                locked_by VARCHAR(255),
+                locked_at TIMESTAMP,
+                last_heartbeat TIMESTAMP
+            )
+        `)
+		if err != nil {
+			return fmt.Errorf("failed to create locks table: %v", err)
+		}
+	} else {
+		// Table exists, check if it has the correct structure
+		_, err = tx.Exec(`
+            DO $$
+            BEGIN
+                -- Check if columns exist and add them if they don't
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='locks' AND column_name='locked_by') THEN
+                    ALTER TABLE locks ADD COLUMN locked_by VARCHAR(255);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='locks' AND column_name='locked_at') THEN
+                    ALTER TABLE locks ADD COLUMN locked_at TIMESTAMP;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='locks' AND column_name='last_heartbeat') THEN
+                    ALTER TABLE locks ADD COLUMN last_heartbeat TIMESTAMP;
+                END IF;
+            END $$;
+        `)
+		if err != nil {
+			return fmt.Errorf("failed to ensure table structure: %v", err)
+		}
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return nil
 }

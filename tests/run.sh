@@ -24,6 +24,6 @@ read
 pkill -f test-app
 
 # Stop and remove the Docker containers
-docker-compose down
+docker-compose down -v
 
 echo "E2E test completed."

@@ -29,7 +29,7 @@ func main() {
 	)
 
 	if err := gl.EnsureTable(); err != nil {
-		log.Printf("%s: Failed to ensure locks table: %v", appName, err)
+		log.Fatalf("%s: Failed to ensure locks table: %v", appName, err)
 	}
 
 	for {
