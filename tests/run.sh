@@ -15,6 +15,7 @@ go build -o test-app main.go
 # Run two instances of the test application
 APP_NAME=app1 ./test-app &
 APP_NAME=app2 ./test-app &
+APP_NAME=app3 ./test-app &
 
 # Wait for user input to stop the test
 echo "Press Enter to stop the test..."
@@ -25,5 +26,7 @@ pkill -f test-app
 
 # Stop and remove the Docker containers
 docker-compose down -v
+
+rm -rf test-app
 
 echo "E2E test completed."
