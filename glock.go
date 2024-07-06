@@ -232,23 +232,6 @@ func (gl *GlobalLock) Run(f func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func (gl *GlobalLock) heartbeat(stop <-chan struct{}) {
-	ticker := time.NewTicker(gl.heartbeatInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			_, err := gl.db.Exec("UPDATE locks SET last_heartbeat = NOW() WHERE id = $1", gl.lockID)
-			if err != nil {
-				log.Printf("Failed to update heartbeat: %v", err)
-			}
-		case <-stop:
-			return
-		}
-	}
-}
-
 // EnsureTable ensures that the locks table exists in the database.
 //
 // This method should be called once when setting up the application to make sure
