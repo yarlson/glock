@@ -3,6 +3,7 @@ package glock
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -126,6 +127,25 @@ func (s *GlobalLockTestSuite) TestRunWithLock() {
 	})
 
 	s.Require().NoError(err)
+	s.True(executed)
+
+	// Check if the lock was released
+	var count int
+	err = s.db.QueryRow("SELECT COUNT(*) FROM locks WHERE id = 1").Scan(&count)
+	s.Require().NoError(err)
+	s.Equal(0, count)
+}
+
+func (s *GlobalLockTestSuite) TestRunWithLockWithError() {
+	gl := NewGlobalLock(s.db, 1, "instance1")
+
+	executed := false
+	err := gl.Run(func(tx *sql.Tx) error {
+		executed = true
+		return errors.New("test error")
+	})
+
+	s.Require().Error(err)
 	s.True(executed)
 
 	// Check if the lock was released

@@ -219,18 +219,22 @@ func (gl *GlobalLock) Run(f func(*sql.Tx) error) error {
 	// Stop the heartbeat goroutine
 	close(done)
 
-	if err != nil {
-		return err
+	// Always attempt to release the lock, regardless of whether f() succeeded
+	_, releaseErr := tx.Exec("DELETE FROM locks WHERE id = $1 AND locked_by = $2", gl.lockID, gl.instanceID)
+	if releaseErr != nil {
+		// If we can't release the lock, log the error but don't overwrite the original error from f()
+		log.Printf("Failed to release lock: %v", releaseErr)
 	}
 
-	// Release the lock
-	_, err = tx.Exec("DELETE FROM locks WHERE id = $1 AND locked_by = $2", gl.lockID, gl.instanceID)
-	if err != nil {
-		return fmt.Errorf("failed to release lock: %v", err)
+	// If f() succeeded, commit the transaction. Otherwise, the deferred Rollback will be called.
+	if err == nil {
+		if commitErr := tx.Commit(); commitErr != nil {
+			return fmt.Errorf("failed to commit transaction: %v", commitErr)
+		}
 	}
 
-	// Commit the transaction
-	return tx.Commit()
+	// Return any error from f(), or nil if everything succeeded
+	return err
 }
 
 // EnsureTable ensures that the locks table exists in the database.
