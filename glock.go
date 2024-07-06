@@ -44,6 +44,7 @@ package glock
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -179,7 +180,7 @@ func (gl *GlobalLock) Run(f func(*sql.Tx) error) error {
 		return fmt.Errorf("failed to check last heartbeat: %v", err)
 	}
 
-	if err == sql.ErrNoRows || time.Since(lastHeartbeat) > gl.lockTimeout {
+	if errors.Is(err, sql.ErrNoRows) || time.Since(lastHeartbeat) > gl.lockTimeout {
 		// The lock is stale or doesn't exist, we can acquire it
 		_, err := tx.Exec(`
             INSERT INTO locks (id, locked_by, locked_at, last_heartbeat)
