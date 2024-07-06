@@ -1,4 +1,4 @@
-module githib.com/yarlson/glock
+module github.com/yarlson/glock
 
 go 1.21
 
